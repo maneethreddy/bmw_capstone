@@ -1,0 +1,19 @@
+[project]
+name = "bmw-capstone-p11"
+version = "0.1.0"
+description = "BMW Participant 11 real-time connected vehicle streaming project"
+requires-python = ">=3.10"
+dependencies = [
+	"boto3>=1.34,<2",
+	"kafka-python>=2.0,<3",
+	"pyspark==3.5.3",
+	"python-dotenv>=1.0,<2",
+	"snowflake-connector-python>=3.10,<4",
+]
+
+[project.scripts]
+bmw-telemetry-generator = "src.generator.cli:main"
+bmw-streaming = "src.streaming.run_streaming:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

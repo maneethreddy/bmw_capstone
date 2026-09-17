@@ -1,0 +1,1 @@
+"""Optional analytical output sinks."""
