@@ -1,6 +1,9 @@
 boto3>=1.34,<2
 kafka-python>=2.0,<3
+pyarrow>=14.0,<19
 pyspark==3.5.3
 python-dotenv>=1.0,<2
-snowflake-connector-python>=3.10,<4
 pytest>=8,<10
+# snowflake-connector-python — Snowflake is NOT used in this project.
+# Athena is the analytical platform. Uncomment if Snowflake is ever needed.
+# snowflake-connector-python>=3.10,<4

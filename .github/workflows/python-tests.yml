@@ -17,10 +17,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      # Java 17 is required for PySpark 3.5.x (Java 11 or 17 supported)
+      - name: Set up Java 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
       - name: Install dependencies
         run: |
@@ -31,7 +38,10 @@ jobs:
         run: python -m compileall -q src tests
 
       - name: Run tests
-        run: pytest -q
+        run: pytest -v
+        env:
+          # Explicitly point PySpark at the Java 17 runtime set up above
+          JAVA_HOME: ${{ env.JAVA_HOME }}
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3

@@ -1,22 +1,12 @@
--- Verify vehicle-level analytical output in BMW_TELEMETRY_AGGREGATES.
-SELECT VEHICLE_ID, AVG(AVERAGE_SPEED) AS AVG_SPEED
-FROM BMW_TELEMETRY_AGGREGATES
-GROUP BY VEHICLE_ID
-ORDER BY VEHICLE_ID;
-
-SELECT VEHICLE_ID, AVG(AVERAGE_BATTERY_LEVEL) AS AVG_BATTERY_LEVEL
-FROM BMW_TELEMETRY_AGGREGATES
-GROUP BY VEHICLE_ID;
-
-SELECT VEHICLE_ID, MAX(MAXIMUM_TEMPERATURE) AS MAX_TEMPERATURE
-FROM BMW_TELEMETRY_AGGREGATES
-GROUP BY VEHICLE_ID;
-
-SELECT VEHICLE_ID, SUM(FAULT_COUNT) AS FAULT_COUNT
-FROM BMW_TELEMETRY_AGGREGATES
-GROUP BY VEHICLE_ID;
-
-SELECT VEHICLE_ID, WINDOW_START, WINDOW_END, AVERAGE_SPEED,
-       AVERAGE_BATTERY_LEVEL, MAXIMUM_TEMPERATURE, FAULT_COUNT, EVENT_COUNT
-FROM BMW_TELEMETRY_AGGREGATES
-ORDER BY WINDOW_START, VEHICLE_ID;
+-- =============================================================================
+-- LEGACY FILE — Snowflake is NOT used in this project
+-- =============================================================================
+-- This file is retained for historical reference only.
+-- The BMW Capstone P11 project uses Amazon Athena to query curated
+-- Parquet data stored in S3 via the AWS Glue Data Catalog.
+--
+-- For the current analytical queries, see:
+--   sql/athena_setup.sql  — Glue/Athena table setup
+--   sql/athena_queries.sql — analytical queries (Avg Speed, Avg Battery,
+--                            Max Temp, Fault Count, etc.)
+-- =============================================================================
