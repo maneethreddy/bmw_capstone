@@ -17,47 +17,43 @@ Installation
 
 1. **Clone the repository** and create a virtual environment::
 
-      git clone https://github.com/your-org/bmw_capstone_p11.git
-      cd bmw_capstone_p11
-      python -m venv .venv
+      git clone https://github.com/maneethreddy/bmw_capstone.git
+      cd bmw_capstone
+      python3 -m venv .venv
       source .venv/bin/activate      # Windows: .venv\Scripts\activate
 
-2. **Install Python dependencies**::
+2. **Install Python and Frontend dependencies**::
 
-      pip install -e .
-      pip install -r api/requirements.txt
+      pip install -r requirements.txt
+      cd frontend && npm install && cd ..
 
-3. **Copy and edit the sample environment file**::
+Starting the Pipeline
+---------------------
 
-      cp configs/sample.env .env
-      # Edit .env with your AWS region, S3 bucket name, etc.
+Option A: One-Command Startup (Recommended)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Running Locally
----------------
+Run the master startup script to launch Kafka, FastAPI, and Vite automatically::
 
-The pipeline requires three concurrently running processes.
+   bash start.sh
 
-Terminal 1 — Kafka broker
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+Option B: Manual Multi-Terminal Startup
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-::
+Terminal 1 — Kafka broker::
 
    docker compose up -d kafka
 
-Terminal 2 — PySpark Structured Streaming
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Terminal 2 — PySpark Structured Streaming::
 
-::
+   python -m src.streaming.run_streaming \
+     --window-duration "1 minute" \
+     --watermark-delay "30 seconds" \
+     --checkpoint ./checkpoints/demo
 
-   bmw-streaming
-   # or: python -m src.streaming.run_streaming
+Terminal 3 — Telemetry Generator::
 
-Terminal 3 — Telemetry Generator
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Send 100 events at 0.5-second intervals::
-
-   python -m src.generator.cli --count 100 --interval 0.5
+   python -m src.generator.cli --count 20 --interval 0.2
 
 Terminal 4 — API + Dashboard
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
