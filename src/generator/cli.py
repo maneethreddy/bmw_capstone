@@ -1,3 +1,13 @@
+"""Command-line interface for the BMW telemetry generator.
+
+Publishes synthetic vehicle telemetry events to Kafka.
+Usage::
+
+    python -m src.generator.cli --count 100 --interval 0.5
+    # or via the installed entry point:
+    bmw-telemetry-generator --count 100 --interval 0.5
+"""
+
 import argparse
 import logging
 import time
@@ -7,6 +17,12 @@ from src.kafka.producer import TelemetryKafkaProducer
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build and return the CLI argument parser.
+
+    Returns:
+        Configured :class:`argparse.ArgumentParser` with ``--count``,
+        ``--interval``, and ``--vehicle-id`` arguments.
+    """
     parser = argparse.ArgumentParser(description="Generate BMW telemetry and publish it to Kafka.")
     parser.add_argument("--count", type=int, default=0, help="Number of events; 0 means run until interrupted.")
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between events.")
@@ -15,6 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Entry point for the telemetry generator CLI.
+
+    Reads CLI arguments, instantiates :class:`~src.kafka.producer.TelemetryKafkaProducer`,
+    and continuously publishes generated events until ``--count`` events
+    have been sent (or indefinitely when ``--count 0``).
+    Handles ``KeyboardInterrupt`` (Ctrl-C) gracefully.
+    """
     args = build_parser().parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     producer = TelemetryKafkaProducer()

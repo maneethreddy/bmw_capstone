@@ -1,3 +1,16 @@
+"""Pure-Python tumbling-window aggregation for BMW telemetry events.
+
+This module provides an in-process alternative to the PySpark window
+aggregation in :mod:`src.streaming.pipeline`.  It is primarily used in
+unit tests and local (non-Spark) execution paths.
+
+Example::
+
+    from src.aggregation.window_aggregator import aggregate_events_by_window
+
+    summaries = aggregate_events_by_window(events, window_seconds=300)
+"""
+
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict, Iterable, List
@@ -10,6 +23,35 @@ def _parse_ts(value: str) -> datetime:
 
 
 def aggregate_events_by_window(events: Iterable[Dict[str, Any]], window_seconds: int = 300) -> List[Dict[str, Any]]:
+    """Aggregate telemetry events into fixed-duration tumbling windows.
+
+    Events are grouped by ``vehicle_id`` and the floor of their UTC
+    timestamp to the nearest ``window_seconds`` boundary.
+
+    Args:
+        events: Iterable of telemetry event dictionaries.  Each event
+            must have the keys ``vehicle_id``, ``timestamp``,
+            ``speed``, ``battery_level``, ``temperature``, and
+            ``fault_code``.
+        window_seconds: Window duration in seconds.  Must be positive.
+            Defaults to ``300`` (5 minutes).
+
+    Returns:
+        List of window summary dictionaries sorted by
+        ``(vehicle_id, window_start)``, each with keys:
+
+        - ``vehicle_id``
+        - ``window_start`` (ISO-8601 string of window start boundary)
+        - ``window_seconds``
+        - ``avg_speed``
+        - ``avg_battery_level``
+        - ``max_temperature``
+        - ``fault_count``
+        - ``event_count``
+
+    Raises:
+        ValueError: If ``window_seconds <= 0``.
+    """
     if window_seconds <= 0:
         raise ValueError("window_seconds must be positive")
 

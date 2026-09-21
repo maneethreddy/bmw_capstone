@@ -1,3 +1,15 @@
+"""Legacy Snowflake telemetry sink (not used in production).
+
+This module is retained for reference only.  In the production
+architecture Athena queries the curated S3 Parquet data directly;
+Snowflake is intentionally not used.
+
+.. note::
+   Requires the ``snowflake-connector-python`` package which is **not**
+   listed as a project dependency.  Install it manually if you need this
+   writer.
+"""
+
 import logging
 import os
 from typing import Any, Iterable, Mapping
@@ -20,8 +32,18 @@ CREATE TABLE IF NOT EXISTS BMW_TELEMETRY_AGGREGATES (
 
 
 class SnowflakeTelemetryWriter:
-    def __init__(self, connection_factory: Any = None):
-        self.connection_factory = connection_factory
+    """Write telemetry aggregate records to a Snowflake table.
+
+    Creates the target table automatically if it does not exist.
+
+    Args:
+        connection_factory: Optional callable that returns a Snowflake
+            connection.  When ``None`` a real connection is created from
+            environment variables (``SNOWFLAKE_ACCOUNT``,
+            ``SNOWFLAKE_USER``, ``SNOWFLAKE_PASSWORD``,
+            ``SNOWFLAKE_DATABASE``, ``SNOWFLAKE_SCHEMA``,
+            optionally ``SNOWFLAKE_WAREHOUSE``).
+    """
 
     def _connect(self) -> Any:
         if self.connection_factory:
@@ -42,6 +64,22 @@ class SnowflakeTelemetryWriter:
         )
 
     def write_records(self, records: Iterable[Mapping[str, Any]]) -> None:
+        """Write an iterable of aggregate records to Snowflake.
+
+        Creates the ``BMW_TELEMETRY_AGGREGATES`` table if needed, then
+        bulk-inserts all records in a single ``executemany`` call.
+
+        Args:
+            records: Iterable of aggregate record mappings with keys:
+                ``vehicle_id``, ``window_start``, ``window_end``,
+                ``average_speed``, ``average_battery_level``,
+                ``maximum_temperature``, ``fault_count``,
+                ``event_count``.
+
+        Raises:
+            ValueError: If required Snowflake environment variables are
+                not set and no ``connection_factory`` was provided.
+        """
         rows = [
             (
                 item["vehicle_id"], item["window_start"], item["window_end"], item.get("average_speed"),

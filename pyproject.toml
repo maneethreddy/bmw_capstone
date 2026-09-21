@@ -9,8 +9,19 @@ dependencies = [
 	"pyarrow>=14.0,<19",
 	"pyspark==3.5.3",
 	"python-dotenv>=1.0,<2",
+	"fastapi>=0.111,<1",
+	"uvicorn[standard]>=0.29,<1",
+	"httpx>=0.27,<1",
 	# snowflake-connector-python — NOT used; Athena is the analytical platform
 	# "snowflake-connector-python>=3.10,<4",
+]
+
+[project.optional-dependencies]
+docs = [
+	"sphinx>=7.3,<9",
+	"furo>=2024.1.29",
+	"sphinx-autodoc-typehints>=2.0,<3",
+	"myst-parser>=3.0,<4",
 ]
 
 [project.scripts]

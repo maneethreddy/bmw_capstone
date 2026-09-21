@@ -1,3 +1,17 @@
+"""Telemetry event normalisation utilities.
+
+Normalises raw telemetry field values so they conform to the canonical
+format expected by the validation and aggregation layers:
+
+- ``vehicle_id`` — stripped and upper-cased.
+- ``timestamp`` — parsed from ISO-8601 (Z-suffix supported) and
+  re-serialised via :meth:`datetime.isoformat`.
+- Numeric fields (``speed``, ``battery_level``, ``temperature``) —
+  coerced to ``float``.
+- ``fault_code`` — mapped to the canonical uppercase representation
+  via :data:`FAULT_CODE_MAP`.
+"""
+
 from datetime import datetime
 from typing import Any, Dict, Iterable, List
 
@@ -33,6 +47,19 @@ def _normalize_fault_code(value: Any) -> str:
 
 
 def normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise a single raw telemetry event in-place (copy).
+
+    Args:
+        event: Raw telemetry event dictionary.  Must contain at minimum
+            ``vehicle_id`` and ``timestamp`` keys.
+
+    Returns:
+        A new dictionary with all fields normalised.
+
+    Raises:
+        ValueError: If ``timestamp`` is ``None`` or cannot be parsed as
+            ISO-8601.
+    """
     normalized = dict(event)
     normalized["vehicle_id"] = str(normalized.get("vehicle_id", "")).strip().upper()
     normalized["timestamp"] = _normalize_timestamp(normalized.get("timestamp"))
@@ -44,4 +71,12 @@ def normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def normalize_event_batch(events: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalise a batch of raw telemetry events.
+
+    Args:
+        events: Iterable of raw event dictionaries.
+
+    Returns:
+        List of normalised event dictionaries in the same order.
+    """
     return [normalize_event(event) for event in events]

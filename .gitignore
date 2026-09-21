@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 *.log
+*.pid
+.spark.log
 .env
 .env.*
 .venv/
@@ -19,7 +21,20 @@ spark-checkpoints/
 *.checkpoint/
 dist/
 build/
+_build/
+docs/_build/
 *.egg-info/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# API
+api/__pycache__/
+api/*.pyc
+api/.env
+api/tests/__pycache__/

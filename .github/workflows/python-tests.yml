@@ -35,7 +35,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Compile Python modules
-        run: python -m compileall -q src tests
+        run: python -m compileall -q src tests api
 
       - name: Run tests
         run: pytest -v

@@ -1,3 +1,19 @@
+"""Synthetic BMW vehicle telemetry event generator.
+
+Generates randomised telemetry events that conform to the BMW connected
+vehicle data model (vehicle ID, speed, battery level, temperature, fault
+code). Events are either generated one at a time via
+:func:`generate_telemetry_event` or in bulk via
+:func:`generate_telemetry_batch`.
+
+Example::
+
+    from src.generator.telemetry_generator import generate_telemetry_batch
+
+    events = generate_telemetry_batch(count=50)
+    # [{'vehicle_id': 'BMW-1', 'speed': 87.42, ...}, ...]
+"""
+
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -18,6 +34,30 @@ def generate_telemetry_event(
     temperature: Optional[float] = None,
     fault_code: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """Generate a single synthetic BMW telemetry event.
+
+    All parameters are optional; omitted values are filled in with
+    random data within the valid operating ranges.
+
+    Args:
+        vehicle_id: Vehicle identifier.  If ``None`` a random
+            ``BMW-NNN`` string is generated.
+        timestamp: ISO-8601 timestamp string.  Defaults to the current
+            UTC time with millisecond precision.
+        speed: Speed in km/h ``[0, 220]``.  Generated randomly if
+            ``None``.
+        battery_level: State-of-charge in % ``[10, 100]``.  Generated
+            randomly if ``None``.
+        temperature: Temperature in \u00b0C ``[-5, 105]``.  Generated
+            randomly if ``None``.
+        fault_code: One of ``NONE``, ``TEMP_HIGH``, ``BATTERY_LOW``,
+            ``ENGINE_FAULT``.  Chosen randomly if ``None``.
+
+    Returns:
+        A dictionary with keys ``vehicle_id``, ``timestamp``,
+        ``speed``, ``battery_level``, ``temperature``, and
+        ``fault_code``.
+    """
     if vehicle_id is None:
         vehicle_id = f"BMW-{random.randint(100, 999)}"
 
@@ -38,6 +78,25 @@ def generate_telemetry_batch(
     vehicle_ids: Optional[List[Any]] = None,
     start_time: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
+    """Generate a batch of synthetic telemetry events.
+
+    Events are distributed round-robin across the provided vehicle IDs,
+    each with a timestamp one second after the previous event.
+
+    Args:
+        count: Number of events to generate.  Must be ``>= 0``.
+        vehicle_ids: List of vehicle identifiers.  Defaults to
+            ``["BMW-1", ..., "BMW-10"]`` when ``None``.
+        start_time: UTC datetime for the first event.  Defaults to the
+            current UTC time when ``None``.
+
+    Returns:
+        Ordered list of event dictionaries (see
+        :func:`generate_telemetry_event`).
+
+    Raises:
+        ValueError: If ``count < 0`` or ``vehicle_ids`` is an empty list.
+    """
     if count < 0:
         raise ValueError("count must be non-negative")
 

@@ -1,3 +1,26 @@
+"""Telemetry event validation functions.
+
+Validates individual events and batches against the BMW connected vehicle
+data model rules:
+
+- ``vehicle_id`` must match ``BMW-[A-Za-z0-9-]+``.
+- ``timestamp`` must be a timezone-aware ISO-8601 datetime.
+- ``speed`` must be in ``[0, 250]`` km/h.
+- ``battery_level`` must be in ``[0, 100]`` %.
+- ``temperature`` must be in ``[-20, 120]`` \u00b0C.
+- ``fault_code`` must be one of :data:`VALID_FAULT_CODES`.
+
+Example::
+
+    from src.validation.validators import validate_event
+
+    result = validate_event({"vehicle_id": "BMW-123", ...})
+    if result.valid:
+        process(result.normalized_event)
+    else:
+        log_errors(result.errors)
+"""
+
 import logging
 import re
 from datetime import datetime
@@ -18,6 +41,18 @@ def _normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def validate_event(event: Dict[str, Any]) -> ValidationResult:
+    """Validate a single telemetry event against all field-level rules.
+
+    The event is first normalised (whitespace stripped, types coerced)
+    before validation rules are applied.
+
+    Args:
+        event: Raw telemetry event dictionary.
+
+    Returns:
+        A :class:`~src.validation.schemas.ValidationResult`.  When
+        ``valid`` is ``False`` the ``errors`` list explains all failures.
+    """
     errors: List[str] = []
     normalized = _normalize_event(event)
 
@@ -65,6 +100,16 @@ def validate_event(event: Dict[str, Any]) -> ValidationResult:
 
 
 def validate_event_batch(events: Iterable[Dict[str, Any]]) -> BatchValidationResult:
+    """Validate an iterable of telemetry events.
+
+    Args:
+        events: Iterable of raw telemetry event dictionaries.
+
+    Returns:
+        A :class:`~src.validation.schemas.BatchValidationResult` with
+        separate lists for valid and invalid events plus all error
+        messages.
+    """
     valid_events: List[Dict[str, Any]] = []
     invalid_events: List[Dict[str, Any]] = []
     invalid_reasons: List[str] = []
@@ -85,6 +130,18 @@ def validate_event_batch(events: Iterable[Dict[str, Any]]) -> BatchValidationRes
 
 
 def remove_duplicate_events(events: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove duplicate events from an iterable, preserving order.
+
+    Two events are considered duplicates when all their key-value pairs
+    are identical.  Only the first occurrence is kept; subsequent
+    duplicates are logged at WARNING level and discarded.
+
+    Args:
+        events: Iterable of telemetry event dictionaries.
+
+    Returns:
+        De-duplicated list of events in original order.
+    """
     seen = set()
     unique_events: List[Dict[str, Any]] = []
 
