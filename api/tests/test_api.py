@@ -311,7 +311,7 @@ class TestErrorClassification:
         RuntimeError("An error occurred (AccessDeniedException) when calling the "
                      "StartQueryExecution operation: User: arn:aws:iam::123456789012:user/test "
                      "is not authorized to perform: athena:StartQueryExecution with an "
-                     "explicit deny in an identity-based policy: arn:aws:iam::123456789012:policy/CohortWindowDeny"),
+                     "explicit deny in an identity-based policy: arn:aws:iam::123456789012:policy/RestrictedPolicy"),
         RuntimeError("AccessDenied: you are not authorized"),
         RuntimeError("not authorized to perform: athena:StartQueryExecution"),
         RuntimeError("explicit deny in an identity-based policy"),
@@ -346,12 +346,12 @@ class TestErrorClassification:
 
     def test_aws_access_denied_message_is_safe(self, client, mock_athena):
         mock_athena.run_query.side_effect = RuntimeError(
-            "AccessDeniedException: arn:aws:iam::532404260630:policy/CohortWindowDeny"
+            "AccessDeniedException: arn:aws:iam::123456789012:policy/RestrictedPolicy"
         )
         body = client.get("/api/summary").text
         # Raw ARN / account ID / policy name must NOT appear in the response
-        assert "532404260630" not in body
-        assert "CohortWindowDeny" not in body
+        assert "123456789012" not in body
+        assert "RestrictedPolicy" not in body
         assert "arn:aws" not in body
 
     @pytest.mark.parametrize("endpoint", ["/api/telemetry", "/api/summary", "/api/faults"])

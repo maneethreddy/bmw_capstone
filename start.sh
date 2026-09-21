@@ -70,19 +70,27 @@ else
 fi
 
 # ── Step 2: FastAPI (background) ─────────────────────────────
-log "Starting FastAPI server on port 8000…"
-if [ -d "$VENV_DIR" ]; then
-  PYTHON="$VENV_DIR/bin/python"
-  UVICORN="$VENV_DIR/bin/uvicorn"
-else
-  PYTHON="python3"
-  UVICORN="uvicorn"
+log "Checking Python environment..."
+if [ ! -d "$VENV_DIR" ]; then
+  if command -v python3 &>/dev/null; then
+    log "Virtual environment not found. Creating .venv and installing requirements..."
+    python3 -m venv "$VENV_DIR"
+    "$VENV_DIR/bin/pip" install --upgrade pip --quiet
+    "$VENV_DIR/bin/pip" install -r "$PROJECT_DIR/requirements.txt" --quiet
+    ok "Virtual environment created and dependencies installed."
+  else
+    err "python3 not found. Please install Python 3.10+."
+  fi
 fi
 
+PYTHON="$VENV_DIR/bin/python"
+UVICORN="$VENV_DIR/bin/uvicorn"
+
+log "Starting FastAPI server on port 8000…"
 # Kill any existing FastAPI on 8000
 lsof -ti :8000 | xargs kill -9 2>/dev/null || true
 
-nohup "$UVICORN" api.main:app --reload --port 8000 \
+nohup "$UVICORN" api.main:app --port 8000 \
   > "$PROJECT_DIR/.api.log" 2>&1 &
 API_PID=$!
 echo $API_PID > "$PROJECT_DIR/.api.pid"
@@ -160,9 +168,18 @@ cleanup() {
   echo ""
   log "Shutting down all services…"
 
-  [ -f "$PROJECT_DIR/.spark.pid" ] && kill "$(cat "$PROJECT_DIR/.spark.pid")" 2>/dev/null; rm -f "$PROJECT_DIR/.spark.pid"
-  [ -f "$PROJECT_DIR/.api.pid" ] && kill "$(cat "$PROJECT_DIR/.api.pid")" 2>/dev/null; rm -f "$PROJECT_DIR/.api.pid"
-  [ -f "$PROJECT_DIR/.frontend.pid" ] && kill "$(cat "$PROJECT_DIR/.frontend.pid")" 2>/dev/null; rm -f "$PROJECT_DIR/.frontend.pid"
+  if [ -f "$PROJECT_DIR/.spark.pid" ]; then
+    kill -9 "$(cat "$PROJECT_DIR/.spark.pid")" 2>/dev/null || true
+    rm -f "$PROJECT_DIR/.spark.pid"
+  fi
+  if [ -f "$PROJECT_DIR/.api.pid" ]; then
+    kill -9 "$(cat "$PROJECT_DIR/.api.pid")" 2>/dev/null || true
+    rm -f "$PROJECT_DIR/.api.pid"
+  fi
+  if [ -f "$PROJECT_DIR/.frontend.pid" ]; then
+    kill -9 "$(cat "$PROJECT_DIR/.frontend.pid")" 2>/dev/null || true
+    rm -f "$PROJECT_DIR/.frontend.pid"
+  fi
 
   if command -v docker &>/dev/null && docker info &>/dev/null 2>&1; then
     cd "$PROJECT_DIR"

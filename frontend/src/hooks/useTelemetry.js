@@ -34,8 +34,8 @@ const INTERVAL  = parseInt(import.meta.env.VITE_REFRESH_INTERVAL || '10000', 10)
 // User-facing messages — no AWS internals, credentials, or account IDs
 const ERROR_MESSAGES = {
   network:             'Cannot reach the API server.',
-  aws_access_denied:   'AWS data access is currently unavailable.',
-  athena_query_failed: 'Athena query failed.',
+  aws_access_denied:   'Athena query access denied. Check AWS IAM permissions.',
+  athena_query_failed: 'Athena query execution failed.',
 }
 
 /**

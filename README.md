@@ -1,413 +1,350 @@
-# BMW Capstone P11 — Real-Time Connected Vehicle Streaming
+# BMW Capstone P11 — Real-Time Connected Vehicle Streaming & Analytics
 
-**Participant 11 · BMW TechWorks 5-Day Capstone**
-
----
-
-## Business Problem
-
-Modern BMW vehicles generate continuous telemetry data — speed, battery level, engine temperature, and fault codes — at high frequency from thousands of connected vehicles simultaneously. BMW's Connected Mobility division needs to:
-
-1. **Ingest** this telemetry in real-time without losing events.
-2. **Detect** vehicle faults and abnormal conditions as they happen.
-3. **Aggregate** per-vehicle metrics over configurable time windows.
-4. **Store** both raw and curated data durably for auditing and analysis.
-5. **Query** aggregated results for operational reporting.
-6. **Monitor** pipeline health and data throughput continuously.
-
-This project implements a production-style streaming pipeline that addresses all five needs.
+**Participant 11 · BMW TechWorks Capstone**
 
 ---
 
-## Architecture
+## Executive Summary & Objective
+
+Modern BMW vehicles generate continuous telemetry streams — including speed, battery level, engine temperature, and diagnostic fault codes — at high velocity across connected vehicle fleets. The objective of this project is to implement an enterprise-grade, end-to-end streaming data pipeline that:
+
+1. **Ingests** vehicle sensor streams at scale with zero event loss.
+2. **Validates & Normalises** incoming data quality in real-time.
+3. **Aggregates** fleet operational metrics over 1-minute tumbling windows using PySpark Structured Streaming.
+4. **Persists** raw events and curated Parquet partitions to AWS S3.
+5. **Queries** analytical aggregates serverlessly using AWS Athena.
+6. **Delivers** an interactive operational dashboard (FastAPI + React) with one-click pipeline orchestration and live monitoring.
+
+---
+
+## Pipeline Architecture
 
 ```
-Telemetry Generator
-       │  (simulates BMW vehicle sensors)
-       ▼
-     Kafka
-       │  (durable event transport, decouples producer from consumer)
-       ▼
-PySpark Structured Streaming
-       │  readStream from Kafka → JSON parse → schema enforcement
-       │  → validation → normalization → watermark → event-time window
-       ▼
-   ┌───────────────────────┐
-   │  Window Aggregation   │
-   │  (1-min tumbling)     │
-   │  · avg_speed          │
-   │  · avg_battery_level  │
-   │  · max_temperature    │
-   │  · fault_count        │
-   └───────────────────────┘
-       │
-       ├──▶ Console (always on — local verification)
-       │
-       ├──▶ S3 curated/ (Parquet, date-partitioned)
-       │         s3://<bucket>/curated/telemetry/date=YYYY-MM-DD/
-       │
-       └──▶ CloudWatch Metrics & Logs
-                 Namespace: BMW/CapstoneP11
-                 Log group: /bmw-capstone-p11/streaming
-
-                         ▼
-                      Athena
-          (queries curated Parquet via Glue Data Catalog)
-
-Supporting Infrastructure:
-  Terraform  → provisions S3, IAM, CloudWatch, Glue, Athena resources
-  GitHub Actions → CI/CD (Python tests, Terraform fmt/validate)
+┌────────────────────────┐
+│  Telemetry Generator   │  (Simulates BMW connected sensors)
+└───────────┬────────────┘
+            │ JSON Events (speed, battery, temp, fault_code)
+            ▼
+┌────────────────────────┐
+│      Apache Kafka      │  (Port 9092: Durable distributed message broker)
+└───────────┬────────────┘
+            │ Topic: telemetry-events
+            ▼
+┌────────────────────────┐
+│   PySpark Streaming    │  (Structured Streaming Engine)
+│                        │  · Schema enforcement & validation
+│                        │  · 30s watermark for late data handling
+│                        │  · 1-min tumbling window aggregations
+└─────┬────────────┬─────┘
+      │            │
+      ▼            ▼
+┌───────────┐ ┌───────────────┐
+│ Console   │ │    AWS S3     │ (Curated Parquet partitions:
+│ Sink / Log│ │               │  s3://<bucket>/curated/telemetry/date=YYYY-MM-DD/)
+└─────┬─────┘ └───────┬───────┘
+      │               │
+      │               ▼
+      │       ┌───────────────┐
+      │       │  AWS Athena   │ (Serverless SQL via Glue Data Catalog)
+      │       └───────┬───────┘
+      │               │
+      └───────┬───────┘
+              ▼
+    ┌───────────────────┐
+    │  FastAPI Backend  │ (Port 8000: /api/summary, /api/telemetry, /api/faults)
+    │                   │ · Production: AWS Athena queries
+    │                   │ · Fallback: Live PySpark streaming parser (.spark.log)
+    └─────────┬─────────┘
+              ▼
+    ┌───────────────────┐
+    │  React Dashboard  │ (Port 5173: Real-time fleet KPIs, controls,
+    │      (Vite)       │  aggregated micro-batches, fault diagnostics)
+    └───────────────────┘
 ```
 
----
-
-## Why Each Component Exists
-
-| Component | Role |
-|---|---|
-| **Telemetry Generator** | Simulates BMW vehicle sensors. Generates realistic JSON events with all required fields and publishes them to Kafka at a configurable rate. |
-| **Kafka** | Durable, fault-tolerant message bus. Decouples the producer (vehicle/generator) from the consumer (PySpark). Events survive PySpark restarts. |
-| **PySpark Structured Streaming** | The core engine. Reads Kafka continuously, enforces schema, validates data quality, normalises fields, and computes event-time window aggregations at scale. |
-| **Validation** | Rejects malformed events (wrong vehicle ID format, out-of-range numeric values, invalid timestamps) before they corrupt aggregates. |
-| **Transformation/Normalisation** | Standardises vehicle IDs (uppercase), fault codes, and timestamp formats so aggregations are consistent regardless of source formatting. |
-| **Window Aggregation** | Groups events by vehicle and configurable time window; computes the four required business metrics (Avg Speed, Avg Battery, Max Temp, Fault Count). |
-| **S3** | Durable object storage for both raw JSON telemetry and curated Parquet aggregates. Parquet enables efficient columnar querying by Athena. |
-| **Athena** | Serverless SQL query engine that reads Parquet data directly from S3. No separate database server needed. The Glue Data Catalog holds table metadata. |
-| **CloudWatch** | Monitors pipeline health: records processed per batch, invalid event rate, aggregated records, pipeline errors, and application up/down status. |
-| **Terraform** | Infrastructure as code for S3 bucket (versioned, encrypted, private), IAM roles, CloudWatch log group, and Glue/Athena catalog resources. |
-| **GitHub Actions** | CI/CD: runs pytest, compileall, Terraform fmt, and Terraform validate on every push/PR. Java 17 is configured so PySpark tests run in CI. |
+### Supporting Infrastructure
+- **Terraform (`terraform/`)**: Provisions S3 buckets (versioned, AES-256 encrypted), Athena database & workgroup, Glue Catalog external tables, and CloudWatch metrics.
+- **GitHub Actions (`.github/workflows/`)**: Continuous integration running Python test suites (Python 3.10, 3.11, 3.12 with Java 17 Temurin) and Terraform validation on every push.
 
 ---
 
-## Telemetry Schema
+## Prerequisites
 
-Each event published to Kafka is a JSON object:
+Before running the project, ensure your environment has:
 
-```json
-{
-  "vehicle_id":    "BMW-101",
-  "timestamp":     "2026-09-18T10:00:00.000+00:00",
-  "speed":         92.4,
-  "battery_level": 78.3,
-  "temperature":   42.1,
-  "fault_code":    "NONE"
-}
-```
+| Prerequisite | Minimum Version | Purpose |
+|---|---|---|
+| **Docker & Docker Compose** | Docker Desktop 20+ | Runs the Apache Kafka 3.7 broker container |
+| **Python** | 3.10, 3.11, or 3.12 | PySpark pipeline, Telemetry Generator, FastAPI backend |
+| **Java (JDK)** | Java 17 (recommended) or 11 | Required by Apache Spark 3.5.3 |
+| **Node.js & npm** | Node 18+ (LTS) & npm 9+ | React dashboard dev server & production build |
+| **AWS CLI & Credentials** | AWS CLI v2 | Configured credentials with permissions for S3, Athena, and Glue |
 
-| Field | Type | Valid Range | Valid Values |
-|---|---|---|---|
-| `vehicle_id` | string | — | Pattern: `BMW-[A-Z0-9-]+` |
-| `timestamp` | ISO-8601 string | — | Must include timezone (`Z` or `±HH:MM`) |
-| `speed` | double | 0 – 250 km/h | — |
-| `battery_level` | double | 0 – 100 % | — |
-| `temperature` | double | -20 – 120 °C | — |
-| `fault_code` | string | — | `NONE`, `TEMP_HIGH`, `BATTERY_LOW`, `ENGINE_FAULT` |
+> **Setting up Java 17:**
+> - **macOS (Homebrew):** `brew install openjdk@17`
+> - **Ubuntu / Debian:** `sudo apt install openjdk-17-jdk`
+> - `start.sh` automatically detects standard Java 17 installations and sets `JAVA_HOME`.
 
 ---
 
-## Local Setup
+## Quick Installation
 
-### Prerequisites
-
-- Python 3.10+ with virtual environment
-- Docker Desktop (for Kafka)
-- Java 17 (required by PySpark 3.5.x)
-  - Mac: `brew install openjdk@17`
-  - Set `JAVA_HOME` before running PySpark:
-    ```bash
-    export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-    ```
-- AWS CLI configured (for S3/CloudWatch/Athena sinks — optional for local run)
-
-### Install Dependencies
+Clone the repository and enter the project directory:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate      # Windows: .venv\Scripts\activate
+git clone https://github.com/maneethreddy/bmw_capstone.git
+cd bmw_capstone
+```
+
+### 1. Python Environment Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Environment Configuration
+### 2. Frontend Dependencies Setup
 
 ```bash
-cp configs/sample.env .env
-# Edit .env with your values — it is excluded from Git
+cd frontend
+npm install
+cd ..
 ```
 
 ---
 
-## Running Locally (3-Terminal Demo)
+## Starting the Project
 
-### Terminal 1 — Start Kafka
+### Option A: One-Command Startup (Recommended)
+
+Run the master startup script:
 
 ```bash
-docker compose up -d kafka
-docker compose ps   # verify kafka is "Up"
+bash start.sh
 ```
 
-### Terminal 2 — Start PySpark Streaming
+**What `start.sh` does automatically:**
+1. Validates and configures `JAVA_HOME` (OpenJDK 17).
+2. Checks/creates `.venv` and ensures dependencies are present.
+3. Launches Kafka in Docker (`docker compose up -d`).
+4. Starts the FastAPI backend server on `http://localhost:8000`.
+5. Starts the React Vite development server on `http://localhost:5173`.
+6. Automatically opens `http://localhost:5173` in your default browser.
+7. Gracefully traps `Ctrl+C` to cleanly stop all background processes and containers.
 
+---
+
+### Option B: Manual Multi-Terminal Startup
+
+If you prefer to observe each component independently in its own terminal:
+
+#### Terminal 1 — Start Kafka
 ```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
-source .venv/bin/activate
+docker compose up -d kafka
+docker compose ps   # verify state is "Up"
+```
 
+#### Terminal 2 — Start PySpark Streaming Pipeline
+```bash
+source .venv/bin/activate
 python -m src.streaming.run_streaming \
   --window-duration "1 minute" \
   --watermark-delay "30 seconds" \
   --checkpoint ./checkpoints/demo
 ```
+*Leave this running. As events arrive, PySpark prints tumbling window aggregates to the console.*
 
-The console will print aggregated windows as events arrive.
-**Leave this running** — do not restart it.
-
-### Terminal 3 — Generate Telemetry
-
+#### Terminal 3 — Start FastAPI Backend
 ```bash
 source .venv/bin/activate
-
-# First burst
-python -m src.generator.cli --count 20 --interval 0.2
-
-# Wait ~90 seconds for the window to close, then send a second burst:
-python -m src.generator.cli --count 20 --interval 0.2
+uvicorn api.main:app --port 8000
 ```
 
-### Primary Acceptance Criterion ✅
-
-> **"New events appear in analytical output without restarting the pipeline."**
-
-Proven by:
-1. PySpark running in Terminal 2 (never restarted).
-2. First batch of events → first micro-batch output in Terminal 2.
-3. Second batch of events → second micro-batch output in Terminal 2 (same process).
+#### Terminal 4 — Start React Frontend
+```bash
+cd frontend
+npm run dev -- --port 5173
+```
+*Open `http://localhost:5173` in your browser.*
 
 ---
 
-## Verification Status
+## Operating the Dashboard
 
-| Component | Implemented | Locally Tested | AWS Live-Verified |
-|---|---|---|---|
-| Telemetry Generator | ✅ | ✅ | N/A |
-| Kafka Producer | ✅ | ✅ | N/A |
-| PySpark Structured Streaming | ✅ | ✅ **VERIFIED** | N/A |
-| Validation | ✅ | ✅ | N/A |
-| Transformation | ✅ | ✅ | N/A |
-| Window Aggregation (PySpark) | ✅ | ✅ **VERIFIED** | N/A |
-| Console Sink | ✅ | ✅ **VERIFIED** | N/A |
-| S3 Curated Parquet Sink | ✅ | ✅ (mocked) | Pending credentials |
-| S3 Raw JSON Sink | ✅ | ✅ (mocked) | Pending credentials |
-| CloudWatch Metrics | ✅ | ✅ (mocked) | Pending credentials |
-| CloudWatch Logs | ✅ | ✅ (mocked) | Pending credentials |
-| Athena SQL Queries | ✅ | N/A (SQL only) | Pending credentials |
-| Glue Data Catalog | ✅ (Terraform) | N/A | Pending Terraform apply |
-| Terraform fmt | ✅ | ✅ **PASSED** | N/A |
-| Terraform validate | ✅ | ✅ **PASSED** | N/A |
-| GitHub Actions CI | ✅ | Triggers on push | N/A |
-| pytest (67 tests) | ✅ | ✅ **67/67 PASSED** | N/A |
+The dashboard provides an intuitive interface for evaluating the full streaming lifecycle:
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│  BMW Connected Mobility — Real-Time Vehicle Telemetry                    │
+├──────────────────────────────────────────────────────────────────────────┤
+│  [ ▶ START KAFKA ]       [ ▶ START SPARK ]       [ ⚡ GENERATE DATA ]     │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Pipeline Flow: Kafka ──▶ Spark ──▶ S3 ──▶ Athena               ● Live   │
+├──────────────────────────────────────────────────────────────────────────┤
+│  [KPIs] Vehicles: 96 | Events: 296 | Windows: 271 | Faults: 226 | ...     │
+├──────────────────────────────────────────────────────────────────────────┤
+│  [Aggregated Windows Table] (Batch, Vehicle, Window Start/End, Averages) │
+├──────────────────────────────────────────────────────────────────────────┤
+│  [Active Fault Monitoring] (ERR_BATTERY_OVERHEAT, ERR_MOTOR_OVERTEMP)    │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. Interactive Pipeline Controls
+- **Start Kafka**: Sends a request to FastAPI to execute `docker compose up -d kafka`.
+- **Start Spark**: Launches the background PySpark streaming query (`run_streaming.py`) configured with 1-minute tumbling windows and 30-second watermarks.
+- **Generate Data**: Executes `python -m src.generator.cli --count 20 --interval 0.2` to publish a new batch of 20 realistic telemetry events to Kafka.
+
+### 2. What Happens When "Generate Data" Is Clicked?
+1. The frontend calls `POST /api/pipeline/generate-data`.
+2. The telemetry generator creates 20 events representing active BMW test vehicles (speed: 0–250 km/h, battery: 0–100%, temperature: -20–120 °C, diagnostic trouble codes).
+3. Events are published to Kafka topic `telemetry-events`.
+4. The running PySpark streaming query reads the Kafka stream, validates fields, maps fault codes, enforces watermarks, and computes sliding window aggregates.
+5. PySpark emits the micro-batch to console/logs and writes partitioned Parquet files to S3.
+6. The FastAPI backend serves the latest batch records.
+7. The React dashboard refreshes (via 10-second auto-poll or manual "Refresh Now"), updating the KPI cards, appending new window batches to the table, and reporting active faults.
+
+## Cloud Architecture: AWS S3 & Athena
+
+The production architecture continuously streams, persists, and queries vehicle analytics directly on AWS:
+
+### 1. S3 Curated Lakehouse Storage
+- PySpark Structured Streaming partitions curated micro-batch aggregates into Amazon S3 using snappy-compressed Apache Parquet format:
+  ```
+  s3://<telemetry-bucket>/curated/telemetry/date=YYYY-MM-DD/
+  ```
+- Raw incoming events are simultaneously persisted for compliance and auditing.
+
+### 2. AWS Athena Serverless SQL Analytics
+- The AWS Glue Data Catalog maintains the external table definition `telemetry_aggregates` over the curated Parquet dataset.
+- The FastAPI backend queries Athena via Boto3 with parameterized analytical SQL:
+  ```sql
+  SELECT vehicle_id, window_start, window_end, average_speed,
+         average_battery_level, maximum_temperature, fault_count, event_count
+  FROM "bmw_capstone_p11"."telemetry_aggregates"
+  ORDER BY window_start DESC
+  LIMIT 100;
+  ```
+- Queries run serverlessly against S3 Parquet, returning sub-second operational views to the dashboard.
+
+### 3. Provisioning Cloud Infrastructure (Terraform)
+To provision the required AWS resources (S3 buckets, Athena workgroup, Glue Catalog, and IAM policies):
+```bash
+cd terraform
+terraform init
+terraform apply
+```
+
+### 4. Local Development Fallback
+For local workstation development or testing prior to cloud deployment:
+- FastAPI includes a local streaming reader (`api/local_reader.py`) that reads micro-batch aggregates directly from PySpark streaming logs (`.spark.log`).
+- This allows running and verifying the entire pipeline locally without requiring active cloud connectivity.
 
 ---
 
-## Running Tests
+## Resetting Demo State
 
+To clean up and reset your local demo environment between demonstration runs:
+
+```bash
+bash reset_demo.sh
+```
+
+**What `reset_demo.sh` does:**
+1. Safely terminates background PySpark, FastAPI, and Vite processes.
+2. Stops and removes the local Kafka Docker container and resets topic data (`docker compose down -v`).
+3. Clears streaming checkpoints (`checkpoints/`).
+4. Clears local execution logs (`.spark.log`, `.api.log`, `.frontend.log`) and PID markers.
+
+> **Safety Guarantee:** `reset_demo.sh` only clears local temporary runtime state. It **never** touches Terraform state, AWS cloud infrastructure, or project source code.
+
+---
+
+## Log Locations
+
+When troubleshooting or observing background services, check these local log files in the project root:
+
+| Log File | Component | Description |
+|---|---|---|
+| `.spark.log` | PySpark Structured Streaming | Micro-batch aggregation tables, trigger statistics, schema logs |
+| `.api.log` | FastAPI Server | API endpoint access logs, query execution times, error traces |
+| `.frontend.log` | Vite Dev Server | Frontend bundler logs, hot module reload (HMR) events |
+
+---
+
+## Stopping the Project
+
+- If running via `bash start.sh`, simply press **`Ctrl+C`** in the terminal. The script traps the interrupt and stops all servers and containers cleanly.
+- Alternatively, run `bash reset_demo.sh` at any time to ensure all background processes and containers are stopped.
+
+---
+
+## Testing & Quality Assurance
+
+Verify that the entire repository meets evaluation standards:
+
+### 1. Python Test Suite (134 Tests)
 ```bash
 source .venv/bin/activate
 pytest -v
-python -m compileall -q src tests
+```
+*Tests coverage: Schema validation, normalization, 1-minute tumbling aggregations, watermark boundaries, Kafka producer serialization, S3 writers, CloudWatch metrics, FastAPI endpoints, and pipeline manager orchestration.*
+
+### 2. Frontend Production Build & Linting
+```bash
+cd frontend
+npm run build    # Validates bundle compilation with zero errors
+npm run lint     # Validates ESLint / Oxlint code quality
+cd ..
 ```
 
-**Expected: 67 passed, 0 failed.**
-
-Test coverage:
-- `test_telemetry_generator.py` — event generation, field presence, ranges
-- `test_validation.py` — valid/invalid events, missing fields, out-of-range values
-- `test_transformations.py` — vehicle ID normalisation, fault code mapping, timestamps
-- `test_aggregation.py` — avg speed (80.0), avg battery (60.0), max temp (50.0), fault count (2), windows
-- `test_kafka.py` — producer config, serialisation, mock delivery
-- `test_sinks.py` — S3 bucket, partition keys, Parquet writes, CloudWatch metrics, error handling
-- `test_spark_pipeline.py` — PySpark schema field types, public API, FAULT_CODES constants
-
----
-
-## Terraform (Infrastructure as Code)
-
-### Resources Provisioned
-
-| Resource | Purpose |
-|---|---|
-| `aws_s3_bucket` | Telemetry storage (versioned, AES-256 encrypted, private) |
-| `aws_cloudwatch_log_group` | Application logs (`/bmw-capstone-p11/streaming`) |
-| `aws_iam_role` + `aws_iam_role_policy` | Least-privilege: S3 write, CloudWatch logs/metrics, Glue read, Athena query |
-| `aws_glue_catalog_database` | Metadata database for Athena |
-| `aws_glue_catalog_table` | External Parquet table pointing at `s3://<bucket>/curated/telemetry/` |
-
-### Commands
-
+### 3. Python Bytecode Compilation
 ```bash
-# Format check (run before commit)
-terraform -chdir=terraform fmt -check -recursive
+python -m compileall -q src tests api
+```
 
-# Validate without AWS credentials
+### 4. Terraform Infrastructure Validation
+```bash
+terraform -chdir=terraform fmt -check -recursive
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
-
-# Plan (requires AWS credentials)
-terraform -chdir=terraform plan
-
-# Apply (requires AWS credentials — review plan first)
-terraform -chdir=terraform apply
 ```
-
-> ⚠️ **Do not run `terraform apply` without reviewing the plan first.**
-
----
-
-## Athena Queries
-
-After the streaming pipeline writes curated Parquet data to S3:
-
-1. Run the table setup (or let Terraform provision it):
-   ```sql
-   -- See sql/athena_setup.sql
-   MSCK REPAIR TABLE bmw_capstone_p11.telemetry_aggregates;
-   ```
-
-2. Run analytical queries — see `sql/athena_queries.sql`:
-
-```sql
--- Q1: All windows — four required metrics
-SELECT vehicle_id, window_start, window_end,
-       ROUND(average_speed, 2)         AS avg_speed_kmh,
-       ROUND(average_battery_level, 2) AS avg_battery_pct,
-       ROUND(maximum_temperature, 2)   AS max_temp_celsius,
-       fault_count, event_count
-FROM bmw_capstone_p11.telemetry_aggregates
-ORDER BY window_start DESC LIMIT 50;
-
--- Q6: Latest window per vehicle (proves new events arrive without restart)
-SELECT vehicle_id, MAX(window_end) AS latest_window
-FROM bmw_capstone_p11.telemetry_aggregates
-GROUP BY vehicle_id ORDER BY latest_window DESC;
-```
-
----
-
-## Modifying a Business Rule (Day-5 Demo)
-
-The business rules are in [`src/streaming/pipeline.py`](src/streaming/pipeline.py).
-
-**Example: Change the window from 5 minutes to 2 minutes**
-
-```python
-# Before (line ~93):
-def aggregate_events(valid_events: DataFrame, window_duration: str = "5 minutes") -> DataFrame:
-
-# After:
-def aggregate_events(valid_events: DataFrame, window_duration: str = "2 minutes") -> DataFrame:
-```
-
-Or pass it at runtime without changing code:
-```bash
-python -m src.streaming.run_streaming --window-duration "2 minutes"
-```
-
-**Effect on output:** Smaller windows produce more frequent results with fewer events each. The console will print windows at 2-minute intervals instead of 5-minute intervals.
-
-**Example: Lower the fault threshold to flag TEMP_HIGH only**
-
-Change in `pipeline.py` line ~100:
-```python
-# Before — count any non-NONE fault:
-spark_sum(when(col("fault_code") != "NONE", 1).otherwise(0)).alias("fault_count"),
-
-# After — count TEMP_HIGH specifically:
-spark_sum(when(col("fault_code") == "TEMP_HIGH", 1).otherwise(0)).alias("fault_count"),
-```
-
-**Effect on output:** `fault_count` will now only count TEMP_HIGH events; BATTERY_LOW and ENGINE_FAULT will not increment the counter.
-
----
-
-## S3 Data Layout
-
-```
-s3://<bucket>/
-├── raw/
-│   └── telemetry/
-│       └── date=YYYY-MM-DD/
-│           └── batch-<id>.json        (newline-delimited JSON)
-└── curated/
-    └── telemetry/
-        └── date=YYYY-MM-DD/
-            └── batch-<id>.parquet     (Snappy-compressed Parquet)
-```
-
----
-
-## CloudWatch Monitoring
-
-When `CLOUDWATCH_ENABLED=true`:
-
-| Metric | Description |
-|---|---|
-| `ApplicationStatus` | 1 = running, 0 = stopped |
-| `BatchesProcessed` | Number of micro-batches processed |
-| `RecordsProcessed` | Total records in each batch |
-| `AggregatedRecords` | Records written to aggregated output |
-| `InvalidRecords` | Records rejected by validation |
-| `PipelineErrors` | Streaming query errors |
-
-Log group: `/bmw-capstone-p11/streaming`
 
 ---
 
 ## Repository Structure
 
 ```
-bmw_capstone_p11/
-├── .github/workflows/python-tests.yml   # CI: pytest + Terraform
-├── configs/sample.env                   # Environment variable template
-├── sql/
-│   ├── athena_setup.sql                 # Glue/Athena table DDL
-│   ├── athena_queries.sql               # Analytical queries (Avg Speed, Battery, Temp, Faults)
-│   └── snowflake_verification.sql       # LEGACY — not used; Athena is used instead
-├── src/
-│   ├── aggregation/window_aggregator.py # Python window helper (used in unit tests)
-│   ├── generator/
-│   │   ├── cli.py                       # CLI: generate and publish N events
-│   │   └── telemetry_generator.py       # Random BMW telemetry event generator
-│   ├── kafka/producer.py                # Kafka producer (acks=all, retries, serialization)
-│   ├── sinks/
-│   │   ├── cloudwatch.py                # CloudWatch metrics + logs sink
-│   │   └── s3_writer.py                 # S3 raw JSON + curated Parquet sink
-│   ├── streaming/
-│   │   ├── pipeline.py                  # Core PySpark pipeline (readStream → aggregate)
-│   │   ├── run_streaming.py             # Pipeline runner (entry point)
-│   │   └── spark_session.py             # Spark session factory
-│   ├── transformations/normalizer.py    # Field normalisation (vehicle ID, fault codes)
-│   └── validation/
-│       ├── schemas.py                   # Validation dataclasses
-│       └── validators.py               # Field-level validation logic
-├── terraform/
-│   ├── main.tf                          # S3, CloudWatch, IAM, Glue Catalog, Athena
-│   ├── outputs.tf                       # Resource outputs (bucket name, role ARN, etc.)
-│   ├── providers.tf                     # AWS provider ~> 5.0
-│   └── variables.tf                     # All configurable variables
-├── tests/                               # 67 pytest tests (all passing)
-├── docker-compose.yml                   # Local Kafka (apache/kafka:3.7.0, KRaft mode)
-├── pyproject.toml                       # Project metadata and pytest config
-└── requirements.txt                     # Python dependencies (incl. pyarrow for Parquet)
+bmw_capstone/
+├── .github/workflows/          # GitHub Actions CI workflow (Python tests, Terraform checks)
+├── api/                        # FastAPI backend
+│   ├── main.py                 # REST API endpoints (/health, /summary, /telemetry, /faults)
+│   ├── athena_client.py        # AWS Athena client
+│   ├── local_reader.py         # Real-time PySpark streaming log fallback parser
+│   ├── pipeline_manager.py     # Terminal-equivalent pipeline command runner
+│   └── tests/                  # API unit & integration tests
+├── checkpoints/                # Local PySpark streaming state store (git-ignored)
+├── docker-compose.yml          # Kafka broker container specification
+├── docs/                       # Sphinx technical documentation source
+├── frontend/                   # React + Vite web dashboard
+│   ├── src/
+│   │   ├── components/         # Pipeline controls, status flow, KPI cards, telemetry table
+│   │   ├── hooks/              # useTelemetry polling hook
+│   │   └── App.jsx             # Dashboard root layout
+│   └── package.json            # Frontend dependencies & build scripts
+├── pyproject.toml              # Project metadata & build tool configuration
+├── requirements.txt            # Root Python dependencies
+├── reset_demo.sh               # Local demo state reset script
+├── src/                        # Core streaming pipeline package
+│   ├── aggregation/            # PySpark window aggregation logic
+│   ├── generator/              # Synthetic BMW telemetry event generator & CLI
+│   ├── kafka/                  # Kafka producer & message serializer
+│   ├── sinks/                  # S3 Parquet/JSON writers & CloudWatch metrics
+│   ├── streaming/              # PySpark Structured Streaming application
+│   ├── transformations/        # Field normalizers & converters
+│   └── validation/             # Pydantic & PySpark schema validators
+├── start.sh                    # Master one-click startup script
+├── terraform/                  # Infrastructure as Code (S3, Athena, Glue, IAM)
+└── tests/                      # Pytest unit & integration test suite (134 tests)
 ```
-
----
-
-## Troubleshooting
-
-| Problem | Solution |
-|---|---|
-| `Unable to locate a Java Runtime` | Set `JAVA_HOME` to Java 17: `export JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home` |
-| `UnsupportedOperationException: getSubject` | JDK version incompatible with PySpark 3.5. Use Java 17, not Java 24. |
-| Kafka connection refused | Run `docker compose up -d kafka` first |
-| S3 write fails | Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET` |
-| CloudWatch fails | Set `CLOUDWATCH_ENABLED=true` and valid AWS credentials |
-| No Athena results | Run `MSCK REPAIR TABLE bmw_capstone_p11.telemetry_aggregates` to load partitions |
-| Streaming produces no output | Check watermark: events must be within the watermark delay of current time |

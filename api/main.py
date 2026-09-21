@@ -49,7 +49,7 @@ def _classify_athena_error(exc: Exception) -> Dict[str, str]:
     """Return a frontend-safe error payload for a failed Athena call.
 
     Returns one of two error_type values:
-      - 'aws_access_denied'   : IAM / permissions block (e.g. CohortWindowDeny)
+      - 'aws_access_denied'   : IAM / permissions restriction
       - 'athena_query_failed' : any other Athena / runtime failure
 
     The raw exception message is NEVER forwarded to the client to avoid
@@ -59,7 +59,7 @@ def _classify_athena_error(exc: Exception) -> Dict[str, str]:
     if any(marker in raw for marker in _ACCESS_DENIED_MARKERS):
         return {
             "error_type": "aws_access_denied",
-            "message": "AWS data access is currently unavailable.",
+            "message": "Athena query access denied. Check AWS IAM permissions.",
         }
     return {
         "error_type": "athena_query_failed",
